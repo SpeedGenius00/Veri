@@ -1,0 +1,481 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+
+model User {
+  id                      String    @id @default(cuid())
+  email                   String    @unique
+  emailVerified           DateTime?
+
+  passwordHash            String?
+
+  name                    String?
+
+  username                String?   @unique
+  image                   String?
+  bio                     String?   @db.Text
+  website                 String?
+
+  isVerifiedCreator       Boolean   @default(false)
+  verifiedAt              DateTime?
+
+  plan                    Plan      @default(FREE)
+  stripeCustomerId        String?   @unique
+  stripeSubscriptionId    String?
+  stripePriceId           String?
+  stripeCurrentPeriodEnd  DateTime?
+
+  detectionsToday         Int       @default(0)
+  lastDailyReset          DateTime  @default(now())
+  detectionsThisMonth     Int       @default(0)
+  certificatesThisMonth   Int       @default(0)
+  apiCallsThisMonth       Int       @default(0)
+  lastMonthlyReset        DateTime  @default(now())
+
+  emailNotifications      Boolean   @default(true)
+  marketingEmails         Boolean   @default(false)
+
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  lastLoginAt             DateTime?
+
+  accounts                Account[]
+  sessions                Session[]
+  detections              Detection[]
+  certificates            Certificate[]
+  apiKeys                 ApiKey[]
+  webhooks                Webhook[]
+  notifications           Notification[]
+}
+
+enum Plan {
+  FREE
+  CREATOR
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expires   DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+// ============================================================
+// DETECTIONS
+// ============================================================
+
+model Detection {
+  id                  String          @id @default(cuid())
+  userId              String?
+  user                User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  contentType         ContentType
+  contentUrl          String?
+  contentHash         String
+  contentSize         Int
+  originalFilename    String?
+  mimeType            String?
+
+  textContent         String?         @db.Text
+  textLength          Int?
+  sourceUrl           String?
+
+  status              DetectionStatus @default(PENDING)
+  queuedAt            DateTime        @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+
+  authenticityScore   Int?
+  verdict             Verdict?
+  confidence          Float?
+
+  analysisResults     Json?
+  processingTimeMs    Int?
+  modelVersions       Json?
+
+  ipAddress           String?
+  userAgent           String?
+  isApiRequest        Boolean         @default(false)
+  apiKeyId            String?
+
+  errorMessage        String?
+  errorCode           String?
+  retryCount          Int             @default(0)
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([contentHash])
+  @@index([status])
+  @@index([createdAt])
+  @@index([verdict])
+}
+
+enum ContentType {
+  IMAGE
+  VIDEO
+  AUDIO
+  TEXT
+  DOCUMENT
+}
+
+enum DetectionStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum Verdict {
+  AUTHENTIC
+  LIKELY_AUTHENTIC
+  UNCERTAIN
+  LIKELY_AI_GENERATED
+  AI_GENERATED
+  MANIPULATED
+}
+
+// ============================================================
+// CERTIFICATES
+// ============================================================
+
+model Certificate {
+  id                    String              @id @default(cuid())
+  certificateId         String              @unique @default(cuid())
+
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  contentType           ContentType
+  contentUrl            String
+  contentHash           String
+  contentSize           Int
+  originalFilename      String?
+  mimeType              String?
+  thumbnailUrl          String?
+
+  title                 String              @db.VarChar(200)
+  description           String?             @db.Text
+  tags                  String[]            @default([])
+
+  contentCreatedAt      DateTime?
+
+  signature             String              @db.Text
+  publicKey             String              @db.Text
+  signatureAlgorithm    String              @default("RSA-SHA256")
+
+  isBlockchainAnchored  Boolean             @default(false)
+  blockchainNetwork     String?
+  blockchainTxHash      String?
+  blockchainTimestamp   DateTime?
+  blockchainBlockNumber Int?
+
+  status                CertificateStatus   @default(ACTIVE)
+  revokedAt             DateTime?
+  revokedReason         String?
+  expiresAt             DateTime?
+
+  isPublic              Boolean             @default(true)
+  password              String?
+  allowedEmails         String[]            @default([])
+
+  verificationCount     Int                 @default(0)
+  viewCount             Int                 @default(0)
+  lastVerifiedAt        DateTime?
+  lastViewedAt          DateTime?
+
+  metadata              Json?
+
+  certifiedAt           DateTime            @default(now())
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  verifications         Verification[]
+
+  @@index([userId])
+  @@index([certificateId])
+  @@index([contentHash])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum CertificateStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+  SUSPENDED
+}
+
+model Verification {
+  id                String             @id @default(cuid())
+
+  certificateId     String
+  certificate       Certificate        @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  verifierUserId    String?
+  verifierIp        String?
+  verifierUserAgent String?            @db.Text
+  verifierCountry   String?
+
+  method            VerificationMethod @default(LINK)
+
+  providedHash      String?
+  contentHashMatch  Boolean
+  signatureValid    Boolean
+  certificateActive Boolean
+
+  isValid           Boolean
+  failureReason     String?
+
+  createdAt         DateTime           @default(now())
+
+  @@index([certificateId])
+  @@index([createdAt])
+}
+
+enum VerificationMethod {
+  LINK
+  QR_CODE
+  API
+  CONTENT_UPLOAD
+  EMBED
+}
+
+// ============================================================
+// API KEYS
+// ============================================================
+
+model ApiKey {
+  id              String    @id @default(cuid())
+
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name            String    @db.VarChar(100)
+  keyHash         String    @unique
+  keyPrefix       String    @db.VarChar(12)
+
+  permissions     String[]  @default(["detect", "verify"])
+
+  rateLimit       Int       @default(60)
+  dailyLimit      Int?
+  monthlyLimit    Int?
+
+  usageCount      Int       @default(0)
+  usageToday      Int       @default(0)
+  usageThisMonth  Int       @default(0)
+  lastUsedAt      DateTime?
+  lastResetAt     DateTime  @default(now())
+
+  allowedIps      String[]  @default([])
+  allowedDomains  String[]  @default([])
+
+  isActive        Boolean   @default(true)
+  expiresAt       DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([keyHash])
+}
+
+// ============================================================
+// WEBHOOKS
+// ============================================================
+
+model Webhook {
+  id              String    @id @default(cuid())
+
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  url             String
+  secret          String
+  events          String[]  @default([])
+
+  isActive        Boolean   @default(true)
+
+  deliveryCount   Int       @default(0)
+  failureCount    Int       @default(0)
+  lastDeliveredAt DateTime?
+  lastFailedAt    DateTime?
+  lastFailureMsg  String?
+
+  maxRetries      Int       @default(3)
+  retryDelayMs    Int       @default(5000)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model WebhookDelivery {
+  id              String    @id @default(cuid())
+
+  webhookId       String
+
+  event           String
+  payload         Json
+
+  statusCode      Int?
+  responseBody    String?   @db.Text
+  responseTimeMs  Int?
+
+  success         Boolean
+  errorMessage    String?
+  attempts        Int       @default(1)
+
+  createdAt       DateTime  @default(now())
+  deliveredAt     DateTime?
+
+  @@index([webhookId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id          String              @id @default(cuid())
+
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        NotificationType
+  title       String
+  message     String              @db.Text
+  data        Json?
+  actionUrl   String?
+
+  isRead      Boolean             @default(false)
+  readAt      DateTime?
+
+  emailSent   Boolean             @default(false)
+  emailSentAt DateTime?
+
+  createdAt   DateTime            @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  DETECTION_COMPLETE
+  DETECTION_FAILED
+  CERTIFICATE_CREATED
+  CERTIFICATE_VERIFIED
+  CERTIFICATE_REVOKED
+  USAGE_WARNING
+  USAGE_LIMIT_REACHED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_CANCELLED
+  SUBSCRIPTION_RENEWED
+  PAYMENT_FAILED
+  WELCOME
+  SYSTEM
+}
+
+// ============================================================
+// ANALYTICS
+// ============================================================
+
+model DailyStats {
+  id                      String    @id @default(cuid())
+  date                    DateTime  @unique @db.Date
+
+  totalUsers              Int       @default(0)
+  newUsers                Int       @default(0)
+  activeUsers             Int       @default(0)
+
+  totalDetections         Int       @default(0)
+  imageDetections         Int       @default(0)
+  textDetections          Int       @default(0)
+  videoDetections         Int       @default(0)
+  audioDetections         Int       @default(0)
+
+  authenticCount          Int       @default(0)
+  likelyAuthenticCount    Int       @default(0)
+  uncertainCount          Int       @default(0)
+  likelyAiCount           Int       @default(0)
+  aiGeneratedCount        Int       @default(0)
+
+  certificatesCreated     Int       @default(0)
+  certificatesRevoked     Int       @default(0)
+
+  verificationsPerformed  Int       @default(0)
+  successfulVerifications Int       @default(0)
+  failedVerifications     Int       @default(0)
+
+  apiRequests             Int       @default(0)
+
+  newSubscriptions        Int       @default(0)
+  cancelledSubscriptions  Int       @default(0)
+  revenue                 Float     @default(0)
+
+  avgDetectionTimeMs      Float?
+  avgCertificationTimeMs  Float?
+
+  createdAt               DateTime  @default(now())
+
+  @@index([date])
+}
