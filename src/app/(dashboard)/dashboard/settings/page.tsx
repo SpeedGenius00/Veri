@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSession } from "next-auth/react"
+import { useSession, signOut } from "next-auth/react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -12,6 +12,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { toast } from "sonner"
 
 const profileSchema = z.object({
@@ -198,23 +207,92 @@ export default function ProfileSettingsPage() {
       </Card>
 
       {/* Danger Zone */}
-      <Card className="border-destructive">
-        <CardHeader>
-          <CardTitle className="text-destructive">Danger Zone</CardTitle>
-          <CardDescription>
-            Irreversible and destructive actions
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="destructive" disabled>
-            Delete Account
-          </Button>
-          <p className="text-xs text-muted-foreground mt-2">
-            Account deletion coming soon. Contact support to delete your account.
-          </p>
-        </CardContent>
-      </Card>
+      <DeleteAccountSection />
     </div>
+  )
+}
+
+function DeleteAccountSection() {
+  const [open, setOpen] = useState(false)
+  const [confirmText, setConfirmText] = useState("")
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    if (confirmText !== "DELETE") return
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch("/api/user/account", {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || "Failed to delete account")
+      }
+
+      toast.success("Account deleted successfully")
+      signOut({ callbackUrl: "/" })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete account")
+      setIsDeleting(false)
+    }
+  }
+
+  return (
+    <Card className="border-destructive">
+      <CardHeader>
+        <CardTitle className="text-destructive">Danger Zone</CardTitle>
+        <CardDescription>
+          Irreversible and destructive actions
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); setConfirmText("") }}>
+          <DialogTrigger asChild>
+            <Button variant="destructive">Delete Account</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete your account?</DialogTitle>
+              <DialogDescription>
+                This action is permanent and cannot be undone. All your data — including
+                detections, certificates, API keys, and billing information — will be
+                permanently removed.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <Label htmlFor="confirm-delete">
+                Type <span className="font-mono font-semibold">DELETE</span> to confirm
+              </Label>
+              <Input
+                id="confirm-delete"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="DELETE"
+                disabled={isDeleting}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={isDeleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={confirmText !== "DELETE" || isDeleting}
+              >
+                {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Delete Account
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <p className="text-xs text-muted-foreground mt-2">
+          Permanently delete your account and all associated data.
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 
